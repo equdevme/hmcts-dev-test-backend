@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:17
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: tasks
+      POSTGRES_USER: tasks_user
+      POSTGRES_PASSWORD: local_dev_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  postgres_data:
