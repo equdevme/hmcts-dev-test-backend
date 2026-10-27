@@ -167,6 +167,73 @@ For example, supplying `"abcd"` as `createdBy` returns a `400` response with an 
 
 A request referencing a nonexistent caseworker returns `404 Not Found` with a message identifying the missing caseworker ID.
 
+### Retrieve tasks
+
+**`GET /tasks`**
+
+Retrieves a list of tasks, optionally filtered by status, creating caseworker and due date/time.
+
+All tasks are visible to all caseworkers. The `createdBy` parameter can be used to retrieve tasks created by a particular caseworker.
+
+**Query parameters**
+
+| Parameter | Required | Description |
+|---|---|---|
+| `status` | No | Filter by task status: `TODO`, `IN_PROGRESS` or `DONE` |
+| `createdBy` | No | Filter by the ID of the creating caseworker |
+| `dueBefore` | No | Return tasks due strictly before the specified ISO 8601 instant |
+| `sortBy` | No | Sort by `dueAt`, `createdAt`, `updatedAt`, `title` or `status`. Defaults to `dueAt` |
+| `sortDirection` | No | `asc` or `desc` (case-insensitive). Defaults to `asc` |
+
+Filters can be combined. Tasks are sorted by the requested field and direction, with task ID ascending as a secondary sort to ensure deterministic ordering.
+
+**Example requests**
+
+Retrieve all tasks using the default due-date ordering:
+
+`GET /tasks`
+
+Retrieve tasks created by caseworker 1:
+
+`GET /tasks?createdBy=1`
+
+Retrieve incomplete tasks due before a particular date, ordered by due date:
+
+`GET /tasks?status=TODO&dueBefore=2026-11-05T12:00:00Z&sortBy=dueAt&sortDirection=asc`
+
+Retrieve tasks sorted alphabetically by title:
+
+`GET /tasks?sortBy=title&sortDirection=asc`
+
+**Successful response — `200 OK`**
+
+Returns a JSON array of task objects, using the same response fields as `POST /tasks`.
+
+When no tasks match the supplied filters, the response is an empty array (`[]`) with status `200 OK`.
+
+**Error responses**
+
+| Status | Description |
+|---|---|
+| `400 Bad Request` | An invalid filter value, incompatible parameter type, unsupported sort field or invalid sort direction |
+
+Invalid query parameters return a `ProblemDetail` response containing field-specific errors.
+
+For example, `GET /tasks?sortDirection=sideways` returns:
+
+```json
+{
+  "title": "Invalid query parameter",
+  "status": 400,
+  "detail": "Invalid query parameter: sortDirection",
+  "errors": {
+    "sortDirection": "Must be 'asc' or 'desc'"
+  }
+}
+```
+
+Invalid enum values and incompatible date/time values are also rejected with `400 Bad Request`.
+
 ## Testing
 
 Integration tests use a separate `tasks_test` database.
@@ -209,6 +276,17 @@ The task creation tests cover:
 - Rejection of an incompatible caseworker ID value with `400 Bad Request`.
 - Rejection of a nonexistent caseworker with `404 Not Found`.
 
+The task retrieval tests cover:
+
+- Retrieving tasks with their creating caseworker IDs and default due-date ordering.
+- Filtering tasks by creating caseworker, status and due date/time.
+- Combining multiple filters.
+- Sorting tasks by due date in ascending and descending order.
+- Sorting tasks alphabetically by title.
+- Accepting case-insensitive sort directions.
+- Rejecting invalid filter and sorting parameters with `400 Bad Request`.
+- Returning an empty array when no tasks match the supplied filters.
+
 Controller tests create their own caseworker test data rather than relying on hardcoded database IDs.
 
 Tests use transactions that roll back after execution to avoid retaining test data.
@@ -235,14 +313,18 @@ This directs integration tests to the separate test database.
 - Database-generated identity values are used for primary keys.
 - API request and response representations use Java records, keeping the persistence entities separate from the API contract.
 - Request validation uses Jakarta Bean Validation annotations.
-- The controller delegates task creation to a service, which resolves the caseworker and persists the task through Spring Data JPA repositories.
-- Exception handling is centralised using `@RestControllerAdvice` and Spring's `ProblemDetail` responses.
+- Controllers handle HTTP request parameters and map domain entities to API response DTOs; services implement task operations without depending on request or response DTOs.
+- Task creation resolves the creating caseworker and persists the task through Spring Data JPA repositories.
+- Task retrieval uses Spring Data JPA Specifications to compose optional filters without requiring separate repository methods for each combination.
+- Sorting is restricted to an explicit enum of supported task fields, with a secondary ID sort for deterministic results.
+- Exception handling is centralised using `@RestControllerAdvice` and Spring's `ProblemDetail` responses, including field-specific validation and query-parameter errors.
 
 ## Further Development
 
 The following functionality and documentation will be completed as implementation progresses:
 
-- Remaining task retrieval, update and deletion endpoints
+- Retrieval of individual tasks by ID
+- Task update and deletion endpoints
 - Additional task management business rules
 - Integration tests for the remaining API endpoints
 - Frontend setup and integration

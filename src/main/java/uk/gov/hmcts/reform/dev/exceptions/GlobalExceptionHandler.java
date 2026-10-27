@@ -5,10 +5,12 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+
 import tools.jackson.databind.exc.InvalidFormatException;
 
 @RestControllerAdvice
@@ -65,13 +67,49 @@ public class GlobalExceptionHandler {
                 .orElse(null);
 
             if (field != null) {
-                problem.setProperty("errors", Map.of(
-                    field,
-                    "Invalid value or type"
-                ));
+                problem.setProperty(
+                    "errors",
+                    Map.of(field, "Invalid value or type")
+                );
             }
         }
-        exception.printStackTrace();
+
+        return problem;
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ProblemDetail handleQueryParameterTypeMismatch(
+        MethodArgumentTypeMismatchException exception
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            "Invalid query parameter: " + exception.getName()
+        );
+
+        problem.setTitle("Invalid query parameter");
+        problem.setProperty(
+            "errors",
+            Map.of(exception.getName(), "Invalid value or type")
+        );
+
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidQueryParameterException.class)
+    public ProblemDetail handleInvalidQueryParameter(
+        InvalidQueryParameterException exception
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            "Invalid query parameter: " + exception.getParameter()
+        );
+
+        problem.setTitle("Invalid query parameter");
+        problem.setProperty(
+            "errors",
+            Map.of(exception.getParameter(), exception.getMessage())
+        );
+
         return problem;
     }
 }
