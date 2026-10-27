@@ -83,4 +83,10 @@ public class TaskService {
 
         return taskRepository.findAll(filters, sort);
     }
+
+    @Transactional(readOnly = true)
+    public Task getTask(Long id) {
+        return taskRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Task", id));
+    }
 }

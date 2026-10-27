@@ -234,6 +234,23 @@ For example, `GET /tasks?sortDirection=sideways` returns:
 
 Invalid enum values and incompatible date/time values are also rejected with `400 Bad Request`.
 
+### Retrieve a task by ID
+
+`GET /tasks/{id}`
+
+Retrieves a single task by its ID.
+
+**Example:**
+
+```http
+GET /tasks/1
+```
+
+**Responses:**
+- `200 OK` — Returns the task using the same response structure as task creation.
+- `404 Not Found` — The task does not exist, returned as a `ProblemDetail` response.
+- `400 Bad Request` — The task ID is not a valid number.
+
 ## Testing
 
 Integration tests use a separate `tasks_test` database.

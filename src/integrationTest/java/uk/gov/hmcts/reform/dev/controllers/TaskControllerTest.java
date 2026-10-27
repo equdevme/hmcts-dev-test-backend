@@ -469,4 +469,33 @@ class TaskControllerTest {
             .andExpect(jsonPath("$.length()").value(0));
     }
 
+    @DisplayName("Should retrieve a task by ID")
+    @Test
+    void shouldRetrieveTaskById() throws Exception {
+        Task task = createTestTask(
+            testCaseworker,
+            "Review documents",
+            "2026-11-05T12:00:00Z"
+        );
+
+        mockMvc.perform(get("/tasks/{id}", task.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(task.getId()))
+            .andExpect(jsonPath("$.createdBy").value(testCaseworker.getId()))
+            .andExpect(jsonPath("$.title").value("Review documents"))
+            .andExpect(jsonPath("$.status").value("TODO"))
+            .andExpect(jsonPath("$.dueAt").value("2026-11-05T12:00:00Z"))
+            .andExpect(jsonPath("$.createdAt").exists())
+            .andExpect(jsonPath("$.updatedAt").exists());
+    }
+
+    @DisplayName("Should return 404 when task does not exist")
+    @Test
+    void shouldReturnNotFoundForUnknownTask() throws Exception {
+        mockMvc.perform(get("/tasks/{id}", -1))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.title").value("Resource not found"))
+            .andExpect(jsonPath("$.detail").value("Task not found: -1"));
+    }
+
 }
