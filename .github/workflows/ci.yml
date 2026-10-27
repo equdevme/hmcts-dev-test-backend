@@ -1,3 +1,4 @@
+
 name: Template CI
 
 on:
@@ -13,10 +14,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/setup-java@v6
         with:
-          distribution: 'temurin' # See 'Supported distributions' for available options
-          java-version: '17'
+          distribution: 'temurin'
+          java-version: '21'
           cache: 'gradle'
+
+      - name: Start PostgreSQL
+        run: docker compose up -d
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            if docker compose exec -T postgres pg_isready -U tasks_user -d tasks_test; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready in time"
+          docker compose logs postgres
+          exit 1
+
       - name: Build
         run: ./gradlew check
