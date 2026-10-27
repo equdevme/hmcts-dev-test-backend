@@ -57,7 +57,7 @@ Swagger UI is available at:
 
 `http://localhost:4000/swagger-ui/index.html`
 
-The implemented API endpoints can be explored and tested interactively through Swagger UI. Documentation will be expanded as additional task management functionality is implemented.
+The implemented API endpoints can be explored and tested interactively through Swagger UI.
 
 ## Database
 
@@ -251,6 +251,58 @@ GET /tasks/1
 - `404 Not Found` — The task does not exist, returned as a `ProblemDetail` response.
 - `400 Bad Request` — The task ID is not a valid number.
 
+### Update a task's status
+
+**`PATCH /tasks/{id}`**
+
+Updates the status of an existing task. Only the `status` field can currently be updated; other task properties are not editable through this endpoint.
+
+**Example request:**
+
+```json
+{
+  "status": "IN_PROGRESS"
+}
+```
+
+**Request fields**
+
+| Field | Required | Description |
+|---|---|---|
+| `status` | Yes | New task status: `TODO`, `IN_PROGRESS` or `DONE` |
+
+**Successful response — `200 OK`**
+
+Returns the updated task using the same response structure as `POST /tasks`, including the new status and updated timestamp.
+
+**Error responses**
+
+| Status | Description |
+|---|---|
+| `400 Bad Request` | Missing, null or invalid status, malformed JSON or unsupported request fields |
+| `404 Not Found` | The specified task does not exist |
+
+Errors use the existing `ProblemDetail` response format.
+
+### Delete a task
+
+**`DELETE /tasks/{id}`**
+
+Permanently deletes an existing task.
+
+**Successful response — `204 No Content`**
+
+The task is deleted and the response contains no body.
+
+**Error responses**
+
+| Status | Description |
+|---|---|
+| `400 Bad Request` | The task ID is not a valid number |
+| `404 Not Found` | The specified task does not exist |
+
+Deleting a task that does not exist returns `404 Not Found`. Repeated deletion requests remain idempotent in their effect on the database.
+
 ## Testing
 
 Integration tests use a separate `tasks_test` database.
@@ -304,6 +356,25 @@ The task retrieval tests cover:
 - Rejecting invalid filter and sorting parameters with `400 Bad Request`.
 - Returning an empty array when no tasks match the supplied filters.
 
+The individual task retrieval tests cover:
+
+- Retrieving an existing task by ID.
+- Returning `404 Not Found` when the task does not exist.
+
+The task status update tests cover:
+
+- Successfully updating a task's status and persisting the change.
+- Updating the task's `updatedAt` timestamp.
+- Rejecting missing, null or invalid status values with `400 Bad Request`.
+- Rejecting unsupported request fields with `400 Bad Request`.
+- Returning `404 Not Found` when updating a nonexistent task.
+
+The task deletion tests cover:
+
+- Successfully deleting a task and returning `204 No Content` with an empty response body.
+- Verifying that the deleted task no longer exists in the database.
+- Returning `404 Not Found` when deleting a nonexistent task.
+
 Controller tests create their own caseworker test data rather than relying on hardcoded database IDs.
 
 Tests use transactions that roll back after execution to avoid retaining test data.
@@ -335,14 +406,18 @@ This directs integration tests to the separate test database.
 - Task retrieval uses Spring Data JPA Specifications to compose optional filters without requiring separate repository methods for each combination.
 - Sorting is restricted to an explicit enum of supported task fields, with a secondary ID sort for deterministic results.
 - Exception handling is centralised using `@RestControllerAdvice` and Spring's `ProblemDetail` responses, including field-specific validation and query-parameter errors.
+- Task status updates are restricted to the `status` field through `PATCH /tasks/{id}`. Broader task editing is outside the current scope.
+- Status updates use JPA dirty checking within a transaction, with the `@PreUpdate` lifecycle callback maintaining the last-updated timestamp.
+- Task deletion permanently removes the record and returns `404 Not Found` when the specified task does not exist.
+- Jackson is configured to reject unknown JSON properties, preventing unsupported request fields from being silently ignored.
 
 ## Further Development
 
-The following functionality and documentation will be completed as implementation progresses:
+The following functionality and improvements are outside the current backend implementation scope or remain to be completed:
 
-- Retrieval of individual tasks by ID
-- Task update and deletion endpoints
-- Additional task management business rules
-- Integration tests for the remaining API endpoints
-- Frontend setup and integration
-- Assumptions, limitations and potential improvements
+- Frontend application for creating, viewing, updating task statuses and deleting tasks.
+- Caseworker retrieval endpoint to support the frontend's demonstration caseworker selector.
+- Additional task management business rules, such as status transition restrictions.
+- General-purpose task editing beyond status updates.
+- Pagination for task listing if required for larger datasets.
+- Further documentation of assumptions, limitations and potential improvements.

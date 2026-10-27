@@ -40,6 +40,9 @@ spring:
       poolName: TasksHikariCP
       maxLifetime: 7200000
       connectionTimeout: 30000
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   jpa:
     hibernate:
       ddl-auto: validate

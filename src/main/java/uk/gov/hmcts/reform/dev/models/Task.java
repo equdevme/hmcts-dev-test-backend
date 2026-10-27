@@ -102,4 +102,8 @@ public class Task {
         return updatedAt;
     }
 
+    public void setStatus(TaskStatus status) {
+        this.status = status;
+    }
+
 }

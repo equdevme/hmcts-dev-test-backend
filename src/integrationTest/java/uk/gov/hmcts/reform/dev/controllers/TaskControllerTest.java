@@ -14,6 +14,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -21,11 +22,18 @@ import org.springframework.transaction.annotation.Transactional;
 
 import uk.gov.hmcts.reform.dev.models.Caseworker;
 import uk.gov.hmcts.reform.dev.models.Task;
+import uk.gov.hmcts.reform.dev.models.TaskStatus;
 import uk.gov.hmcts.reform.dev.repositories.CaseworkerRepository;
 import uk.gov.hmcts.reform.dev.repositories.TaskRepository;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -495,6 +503,155 @@ class TaskControllerTest {
         mockMvc.perform(get("/tasks/{id}", -1))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.title").value("Resource not found"))
+            .andExpect(jsonPath("$.detail").value("Task not found: -1"));
+    }
+
+    @DisplayName("Should update a task's status and persist the change")
+    @Test
+    void shouldUpdateTaskStatus() throws Exception {
+        Task task = createTestTask(
+            testCaseworker,
+            "Review documents",
+            "2026-11-05T12:00:00Z"
+        );
+
+        final Instant originalUpdatedAt = task.getUpdatedAt();
+
+        mockMvc.perform(patch("/tasks/{id}", task.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                        "status": "IN_PROGRESS"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(task.getId()))
+            .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+            .andExpect(jsonPath("$.title").value("Review documents"));
+
+        entityManager.flush();
+        entityManager.clear();
+
+        Task updatedTask = taskRepository.findById(task.getId()).orElseThrow();
+
+        assertTrue(updatedTask.getUpdatedAt().isAfter(originalUpdatedAt));
+        assertEquals(TaskStatus.IN_PROGRESS, updatedTask.getStatus());
+    }
+
+    @DisplayName("Should reject a status update when status is missing")
+    @Test
+    void shouldRejectMissingStatus() throws Exception {
+        Task task = createTestTask(
+            testCaseworker,
+            "Review documents",
+            "2026-11-05T12:00:00Z"
+        );
+
+        mockMvc.perform(patch("/tasks/{id}", task.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errors.status").exists());
+    }
+
+    @DisplayName("Should reject a status update when status is null")
+    @Test
+    void shouldRejectNullStatus() throws Exception {
+        Task task = createTestTask(
+            testCaseworker,
+            "Review documents",
+            "2026-11-05T12:00:00Z"
+        );
+
+        mockMvc.perform(patch("/tasks/{id}", task.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                        "status": null
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errors.status").exists());
+    }
+
+    @DisplayName("Should reject a status update with an invalid status")
+    @Test
+    void shouldRejectInvalidStatus() throws Exception {
+        Task task = createTestTask(
+            testCaseworker,
+            "Review documents",
+            "2026-11-05T12:00:00Z"
+        );
+
+        mockMvc.perform(patch("/tasks/{id}", task.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                        "status": "INVALID"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errors.status").exists());
+    }
+
+    @DisplayName("Should return 404 when updating a task that does not exist")
+    @Test
+    void shouldReturnNotFoundWhenUpdatingUnknownTask() throws Exception {
+        mockMvc.perform(patch("/tasks/{id}", -1)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                        "status": "DONE"
+                    }
+                    """))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.detail").value("Task not found: -1"));
+    }
+
+    @DisplayName("Should reject unsupported fields in a status update")
+    @Test
+    void shouldRejectUnsupportedUpdateFields() throws Exception {
+        Task task = createTestTask(
+            testCaseworker,
+            "Review documents",
+            "2026-11-05T12:00:00Z"
+        );
+
+        mockMvc.perform(patch("/tasks/{id}", task.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                        "status": "DONE",
+                        "title": "Changed title"
+                    }
+                    """))
+            .andExpect(status().isBadRequest());
+    }
+
+    @DisplayName("Should delete an existing task")
+    @Test
+    void shouldDeleteTask() throws Exception {
+        Task task = createTestTask(
+            testCaseworker,
+            "Review documents",
+            "2026-11-05T12:00:00Z"
+        );
+
+        mockMvc.perform(delete("/tasks/{id}", task.getId()))
+            .andExpect(status().isNoContent())
+            .andExpect(content().string(""));
+
+        entityManager.flush();
+        entityManager.clear();
+
+        assertFalse(taskRepository.existsById(task.getId()));
+    }
+
+    @DisplayName("Should return 404 when deleting a task that does not exist")
+    @Test
+    void shouldReturnNotFoundWhenDeletingUnknownTask() throws Exception {
+        mockMvc.perform(delete("/tasks/{id}", -1))
+            .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.detail").value("Task not found: -1"));
     }
 

@@ -89,4 +89,23 @@ public class TaskService {
         return taskRepository.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Task", id));
     }
+
+    @Transactional
+    public Task updateTaskStatus(Long id, TaskStatus status) {
+        Task task = taskRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Task", id));
+
+        task.setStatus(status);
+
+        return task;
+    }
+
+    @Transactional
+    public void deleteTask(Long id) {
+        Task task = taskRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Task", id));
+
+        taskRepository.delete(task);
+    }
+
 }
