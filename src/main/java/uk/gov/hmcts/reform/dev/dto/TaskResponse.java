@@ -7,6 +7,7 @@ import uk.gov.hmcts.reform.dev.models.TaskStatus;
 
 public record TaskResponse(
     Long id,
+    Long caseId,
     Long createdBy,
     String title,
     String description,
@@ -18,6 +19,7 @@ public record TaskResponse(
     public static TaskResponse from(Task task) {
         return new TaskResponse(
             task.getId(),
+            task.getAssociatedCase().getId(),
             task.getCreatedBy().getId(),
             task.getTitle(),
             task.getDescription(),

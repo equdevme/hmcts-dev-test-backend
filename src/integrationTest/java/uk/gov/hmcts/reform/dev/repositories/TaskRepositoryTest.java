@@ -1,15 +1,19 @@
 package uk.gov.hmcts.reform.dev.repositories;
 
+import java.time.Instant;
+
+import jakarta.persistence.EntityManager;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.context.ActiveProfiles;
-import jakarta.persistence.EntityManager;
-import java.time.Instant;
+import org.springframework.transaction.annotation.Transactional;
+
+import uk.gov.hmcts.reform.dev.models.Case;
+import uk.gov.hmcts.reform.dev.models.Caseworker;
 import uk.gov.hmcts.reform.dev.models.Task;
 import uk.gov.hmcts.reform.dev.models.TaskStatus;
-import uk.gov.hmcts.reform.dev.models.Caseworker;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -25,19 +29,28 @@ class TaskRepositoryTest {
     private CaseworkerRepository caseworkerRepository;
 
     @Autowired
+    private CaseRepository caseRepository;
+
+    @Autowired
     private EntityManager entityManager;
 
     @Test
     void shouldSaveAndRetrieveTask() {
-        // Retrieve an existing caseworker
+        // Create a caseworker
         var caseworker = caseworkerRepository.save(
             new Caseworker("Test Caseworker")
         );
 
-        // Create a task
+        // Create a case owned by the caseworker
+        var associatedCase = caseRepository.save(
+            new Case(caseworker, "Test Case", "A case for integration testing")
+        );
+
+        // Create a task associated with the case
         var dueAt = Instant.parse("2026-11-05T12:00:00Z");
 
         var task = new Task(
+            associatedCase,
             caseworker,
             "Investigate suspicious activity",
             "Check reports from headquarters",
@@ -59,6 +72,9 @@ class TaskRepositoryTest {
         assertThat(retrievedTask.getTitle())
             .isEqualTo("Investigate suspicious activity");
 
+        assertThat(retrievedTask.getAssociatedCase().getId())
+            .isEqualTo(associatedCase.getId());
+
         assertThat(retrievedTask.getCreatedBy().getId())
             .isEqualTo(caseworker.getId());
 
@@ -71,5 +87,4 @@ class TaskRepositoryTest {
         assertThat(retrievedTask.getCreatedAt()).isNotNull();
         assertThat(retrievedTask.getUpdatedAt()).isNotNull();
     }
-
 }

@@ -38,6 +38,7 @@ public class TaskController {
     @ResponseStatus(HttpStatus.CREATED)
     public TaskResponse createTask(@Valid @RequestBody CreateTaskRequest request) {
         var task = taskService.createTask(
+            request.caseId(),
             request.createdBy(),
             request.title(),
             request.description(),

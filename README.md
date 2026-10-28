@@ -65,28 +65,76 @@ The database schema is managed by versioned Flyway migrations in:
 
 `src/main/resources/db/migration/`
 
-The initial schema includes:
+The schema includes three related entities:
 
 **Caseworkers**
 
-- A unique identifier
-- A name
+- A unique identifier and name.
+- Caseworkers can own cases and create tasks.
+
+**Cases**
+
+- A unique identifier, required title and optional description.
+- A required owner (`owner_id`) referencing a caseworker.
+- One caseworker can own multiple cases.
 
 **Tasks**
 
-- A unique identifier
-- A required title
-- An optional description
-- A status (`TODO`, `IN_PROGRESS`, `DONE`)
-- A required due date/time
-- A reference to the creating caseworker
-- Creation and last-updated timestamps
+- A unique identifier, required title and optional description.
+- A status (`TODO`, `IN_PROGRESS`, `DONE`) and required due date/time.
+- A required case reference (`case_id`) and a separate reference to the creating caseworker (`created_by`).
+- Creation and last-updated timestamps.
 
-Each task references one caseworker through a foreign key. Deleting a caseworker is restricted while tasks reference them.
+Each task belongs to one case. A case's owner need not be the creator of its tasks: all caseworkers can view and work with tasks across cases. Foreign keys restrict deletion of referenced cases and caseworkers.
 
-The initial migrations also seed three demonstration caseworkers: Danger Mouse, Count Duckula and Super Ted.
+Flyway seeds three demonstration caseworkers (Danger Mouse, Count Duckula and Super Ted) and nine demonstration cases, three owned by each caseworker.
 
 Dates and times are represented as UTC instants in Java and stored using PostgreSQL `TIMESTAMPTZ`.
+
+## Case API
+
+Cases are read-only through the current API. Case creation, editing and deletion are outside the scope of this implementation.
+
+### Retrieve cases
+
+**`GET /cases`**
+
+Returns all cases, ordered by ID ascending. Optionally filter by owning caseworker using `ownerId`:
+
+`GET /cases?ownerId=1`
+
+**Successful response — `200 OK`**
+
+```json
+[
+  {
+    "id": 1,
+    "ownerId": 1,
+    "title": "Example case",
+    "description": "Example case description"
+  }
+]
+```
+
+The response is an array, including an empty array (`[]`) when no cases match. IDs and example content are illustrative.
+
+### Retrieve a case by ID
+
+**`GET /cases/{id}`**
+
+Returns the specified case using the same object structure as the case list.
+
+- `200 OK` — Case found.
+- `404 Not Found` — Case does not exist.
+
+### Retrieve tasks belonging to a case
+
+**`GET /cases/{id}/tasks`**
+
+Returns tasks associated with the specified case, ordered by due date ascending and then task ID ascending. Each task uses the same response structure as `GET /tasks`.
+
+- `200 OK` — JSON array of tasks, or `[]` if the case has no tasks.
+- `404 Not Found` — Case does not exist.
 
 ## Task API
 
@@ -94,12 +142,13 @@ Dates and times are represented as UTC instants in Java and stored using Postgre
 
 **`POST /tasks`**
 
-Creates a new task associated with an existing caseworker.
+Creates a new task associated with an existing case and creating caseworker.
 
 Example request:
 
 ```json
 {
+  "caseId": 1,
   "createdBy": 1,
   "title": "Review case documents",
   "description": "Check submitted evidence",
@@ -111,6 +160,7 @@ Example request:
 
 | Field | Required | Description |
 |---|---|---|
+| `caseId` | Yes | ID of an existing case |
 | `createdBy` | Yes | ID of an existing caseworker |
 | `title` | Yes | Non-blank task title, maximum 255 characters |
 | `description` | No | Optional task description |
@@ -120,13 +170,14 @@ New tasks are assigned the `TODO` status automatically.
 
 **Successful response — `201 Created`**
 
-The response contains the created task, including its generated ID, initial status, caseworker reference and timestamps.
+The response contains the created task, including its generated ID, case reference, initial status, creating caseworker reference and timestamps.
 
 Example response:
 
 ```json
 {
   "id": 4,
+  "caseId": 1,
   "createdBy": 1,
   "title": "Review case documents",
   "description": "Check submitted evidence",
@@ -144,7 +195,7 @@ The ID and timestamps above are illustrative; actual values are generated when t
 | Status | Description |
 |---|---|
 | `400 Bad Request` | Invalid JSON, incompatible field values or request validation failure |
-| `404 Not Found` | The specified caseworker does not exist |
+| `404 Not Found` | The specified case or caseworker does not exist |
 
 Errors are returned using Spring's `ProblemDetail` response format.
 
@@ -165,7 +216,7 @@ JSON deserialization failures also identify the offending field where available.
 
 For example, supplying `"abcd"` as `createdBy` returns a `400` response with an error associated with `createdBy`.
 
-A request referencing a nonexistent caseworker returns `404 Not Found` with a message identifying the missing caseworker ID.
+A request referencing a nonexistent case or caseworker returns `404 Not Found` with a message identifying the missing resource and ID. A missing `caseId` returns `400 Bad Request`.
 
 ### Retrieve tasks
 
@@ -327,37 +378,29 @@ The IDs are illustrative and are generated by the database.
 
 ## Testing
 
-Integration tests use a separate `tasks_test` database.
+Tests use the `test` Spring profile and a separate `tasks_test` database.
 
-Ensure PostgreSQL is running, then execute all integration tests:
-
-```bash
-./gradlew integration
-```
-
-To run only the repository integration tests:
+Ensure PostgreSQL is running, then run the test suite:
 
 ```bash
-./gradlew integration --tests "uk.gov.hmcts.reform.dev.repositories.*"
+./gradlew test
 ```
 
-To run only the task controller integration tests:
+To force tests to execute even when Gradle reports them as up to date:
 
 ```bash
-./gradlew integration --tests "uk.gov.hmcts.reform.dev.controllers.TaskControllerTest"
+./gradlew test --rerun-tasks
 ```
 
-To run only the caseworker controller integration tests:
-
-```bash
-./gradlew integration --tests "uk.gov.hmcts.reform.dev.controllers.CaseworkerControllerTest"
-```
+The repository also has an integration-test configuration under `src/integrationTest/resources/application-test.yaml`; if using a separately configured `integration` task, verify its availability in the Gradle build.
 
 ### Repository integration tests
 
 These verify that:
 
 - Seeded caseworkers can be retrieved.
+- Cases can be persisted and reloaded with their owning caseworkers.
+- Cases can be filtered by owner ID, including owners with no cases.
 - Tasks can be persisted and reloaded successfully.
 - Persisted task fields, relationships, default status and timestamps are populated as expected.
 
@@ -367,7 +410,9 @@ Controller integration tests use Spring MockMvc to exercise the API request hand
 
 The task creation tests cover:
 
-- Successful task creation returning `201 Created`.
+- Successful task creation for an existing case returning `201 Created` with `caseId`.
+- Rejection of a missing `caseId` with `400 Bad Request`.
+- Rejection of a nonexistent case with `404 Not Found`.
 - Rejection of a blank title with `400 Bad Request`.
 - Rejection of a missing due date with `400 Bad Request`.
 - Rejection of an incompatible caseworker ID value with `400 Bad Request`.
@@ -403,9 +448,16 @@ The task deletion tests cover:
 - Verifying that the deleted task no longer exists in the database.
 - Returning `404 Not Found` when deleting a nonexistent task.
 
+Case controller tests cover:
+
+- Retrieving all cases and filtering by owner ID.
+- Retrieving a case by ID and returning `404 Not Found` for unknown cases.
+- Retrieving only tasks associated with a particular case.
+- Returning `[]` for cases without tasks and `404 Not Found` for unknown case task lists.
+
 The caseworker retrieval test verifies that `GET /caseworkers` returns the three seeded demonstration caseworkers.
 
-Controller tests create their own caseworker test data rather than relying on hardcoded database IDs.
+Controller tests create their own caseworker and case test data rather than relying on hardcoded database IDs.
 
 Tests use transactions that roll back after execution to avoid retaining test data.
 
@@ -432,7 +484,9 @@ This directs integration tests to the separate test database.
 - API request and response representations use Java records, keeping the persistence entities separate from the API contract.
 - Request validation uses Jakarta Bean Validation annotations.
 - Controllers handle HTTP request parameters and map domain entities to API response DTOs; services implement task operations without depending on request or response DTOs.
-- Task creation resolves the creating caseworker and persists the task through Spring Data JPA repositories.
+- Task creation resolves both the associated case and creating caseworker, then persists the task through Spring Data JPA repositories.
+- Case ownership and task creation are distinct relationships; all caseworkers can access tasks across cases.
+- Case retrieval supports optional owner filtering, and case-scoped task retrieval uses a derived Spring Data JPA repository query.
 - Task retrieval uses Spring Data JPA Specifications to compose optional filters without requiring separate repository methods for each combination.
 - Sorting is restricted to an explicit enum of supported task fields, with a secondary ID sort for deterministic results.
 - Exception handling is centralised using `@RestControllerAdvice` and Spring's `ProblemDetail` responses, including field-specific validation and query-parameter errors.
@@ -445,7 +499,7 @@ This directs integration tests to the separate test database.
 
 The following functionality and improvements are outside the current backend implementation scope or remain to be completed:
 
-- Frontend application for creating, viewing, updating task statuses and deleting tasks.
+- Frontend case list and details pages, caseworker selection, and task creation, viewing, status updates and deletion.
 - Additional task management business rules, such as status transition restrictions.
 - General-purpose task editing beyond status updates.
 - Pagination for task listing if required for larger datasets.

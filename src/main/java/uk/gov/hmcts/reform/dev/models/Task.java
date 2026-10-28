@@ -25,6 +25,10 @@ public class Task {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "case_id", nullable = false)
+    private Case associatedCase;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", nullable = false)
     private Caseworker createdBy;
 
@@ -63,7 +67,9 @@ public class Task {
         // Required by JPA
     }
 
-    public Task(Caseworker createdBy, String title, String description, Instant dueAt) {
+    public Task(Case associatedCase, Caseworker createdBy,
+                String title, String description, Instant dueAt) {
+        this.associatedCase = associatedCase;
         this.createdBy = createdBy;
         this.title = title;
         this.description = description;
@@ -72,6 +78,10 @@ public class Task {
 
     public Long getId() {
         return id;
+    }
+
+    public Case getAssociatedCase() {
+        return associatedCase;
     }
 
     public Caseworker getCreatedBy() {

@@ -20,9 +20,11 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import uk.gov.hmcts.reform.dev.models.Case;
 import uk.gov.hmcts.reform.dev.models.Caseworker;
 import uk.gov.hmcts.reform.dev.models.Task;
 import uk.gov.hmcts.reform.dev.models.TaskStatus;
+import uk.gov.hmcts.reform.dev.repositories.CaseRepository;
 import uk.gov.hmcts.reform.dev.repositories.CaseworkerRepository;
 import uk.gov.hmcts.reform.dev.repositories.TaskRepository;
 
@@ -58,12 +60,20 @@ class TaskControllerTest {
     @Autowired
     private EntityManager entityManager;
 
+    @Autowired
+    private CaseRepository caseRepository;
+
+    private Case testCase;
+
     private Caseworker testCaseworker;
 
     @BeforeEach
     void setUp() {
         testCaseworker = caseworkerRepository.save(
             new Caseworker("Test Caseworker")
+        );
+        testCase = caseRepository.save(
+            new Case(testCaseworker, "Test Case", "A case for integration testing")
         );
     }
 
@@ -73,7 +83,13 @@ class TaskControllerTest {
         String dueAt
     ) {
         return taskRepository.saveAndFlush(
-            new Task(caseworker, title, null, Instant.parse(dueAt))
+            new Task(
+                testCase,
+                caseworker,
+                title,
+                null,
+                Instant.parse(dueAt)
+            )
         );
     }
 
@@ -83,18 +99,20 @@ class TaskControllerTest {
 
         String requestBody = """
             {
+                "caseId": %d,
                 "createdBy": %d,
                 "title": "Review case documents",
                 "description": "Check submitted evidence",
                 "dueAt": "2026-11-05T12:00:00Z"
             }
-            """.formatted(testCaseworker.getId());
+            """.formatted(testCase.getId(), testCaseworker.getId());
 
         mockMvc.perform(post("/tasks")
                 .contentType("application/json")
                 .content(requestBody))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.title").value("Review case documents"))
+            .andExpect(jsonPath("$.caseId").value(testCase.getId()))
             .andExpect(jsonPath("$.createdBy").value(testCaseworker.getId()))
             .andExpect(jsonPath("$.status").value("TODO"))
             .andExpect(jsonPath("$.id").isNumber())
@@ -108,15 +126,17 @@ class TaskControllerTest {
     void shouldRejectBlankTitle() throws Exception {
         String requestBody = """
             {
+                "caseId": %d,
                 "createdBy": %d,
                 "title": "   ",
                 "dueAt": "2026-11-05T12:00:00Z"
             }
-            """.formatted(testCaseworker.getId());
+            """.formatted(testCase.getId(), testCaseworker.getId());
 
         mockMvc.perform(post("/tasks")
                 .contentType("application/json")
                 .content(requestBody))
+                
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errors.title").exists());
     }
@@ -126,10 +146,11 @@ class TaskControllerTest {
     void shouldRejectMissingDueDate() throws Exception {
         String requestBody = """
             {
+                "caseId": %d,
                 "createdBy": %d,
                 "title": "Review case documents"
             }
-            """.formatted(testCaseworker.getId());
+            """.formatted(testCase.getId(), testCaseworker.getId());
 
         mockMvc.perform(post("/tasks")
                 .contentType("application/json")
@@ -143,11 +164,12 @@ class TaskControllerTest {
     void shouldRejectInvalidCaseworkerIdType() throws Exception {
         String requestBody = """
             {
+                "caseId": %d,
                 "createdBy": "abcd",
                 "title": "Review case documents",
                 "dueAt": "2026-11-05T12:00:00Z"
             }
-            """;
+            """.formatted(testCase.getId());
 
         mockMvc.perform(post("/tasks")
                 .contentType("application/json")
@@ -161,11 +183,12 @@ class TaskControllerTest {
     void shouldRejectUnknownCaseworker() throws Exception {
         String requestBody = """
             {
+                "caseId": %d,
                 "createdBy": -1,
                 "title": "Review case documents",
                 "dueAt": "2026-11-05T12:00:00Z"
             }
-            """;
+            """.formatted(testCase.getId());
 
         mockMvc.perform(post("/tasks")
                 .contentType("application/json")
@@ -197,9 +220,11 @@ class TaskControllerTest {
         mockMvc.perform(get("/tasks"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].id").value(firstTask.getId()))
+            .andExpect(jsonPath("$[0].caseId").value(testCase.getId()))
             .andExpect(jsonPath("$[0].createdBy").value(testCaseworker.getId()))
             .andExpect(jsonPath("$[0].title").value("Review documents"))
             .andExpect(jsonPath("$[1].id").value(secondTask.getId()))
+            .andExpect(jsonPath("$[1].caseId").value(testCase.getId()))
             .andExpect(jsonPath("$[1].createdBy").value(otherCaseworker.getId()))
             .andExpect(jsonPath("$[1].title").value("Prepare hearing"))
             .andExpect(jsonPath("$.length()").value(2));
@@ -229,7 +254,8 @@ class TaskControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.length()").value(1))
             .andExpect(jsonPath("$[0].id").value(ownTask.getId()))
-            .andExpect(jsonPath("$[0].createdBy").value(testCaseworker.getId()));
+            .andExpect(jsonPath("$[0].createdBy").value(testCaseworker.getId()))
+            .andExpect(jsonPath("$[0].caseId").value(testCase.getId()));
     }
 
     @DisplayName("Should accept case-insensitive sort directions")
@@ -277,7 +303,8 @@ class TaskControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.length()").value(1))
             .andExpect(jsonPath("$[0].id").value(doneTask.getId()))
-            .andExpect(jsonPath("$[0].status").value("DONE"));
+            .andExpect(jsonPath("$[0].status").value("DONE"))
+            .andExpect(jsonPath("$[0].caseId").value(testCase.getId()));
     }
 
     @DisplayName("Should filter tasks due before a specified date")
@@ -489,6 +516,7 @@ class TaskControllerTest {
         mockMvc.perform(get("/tasks/{id}", task.getId()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(task.getId()))
+            .andExpect(jsonPath("$.caseId").value(testCase.getId()))
             .andExpect(jsonPath("$.createdBy").value(testCaseworker.getId()))
             .andExpect(jsonPath("$.title").value("Review documents"))
             .andExpect(jsonPath("$.status").value("TODO"))
@@ -526,6 +554,7 @@ class TaskControllerTest {
                     """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(task.getId()))
+            .andExpect(jsonPath("$.caseId").value(testCase.getId()))
             .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
             .andExpect(jsonPath("$.title").value("Review documents"));
 
@@ -653,6 +682,43 @@ class TaskControllerTest {
         mockMvc.perform(delete("/tasks/{id}", -1))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.detail").value("Task not found: -1"));
+    }
+
+    @DisplayName("Should reject a missing case ID with 400")
+    @Test
+    void shouldRejectMissingCaseId() throws Exception {
+        String requestBody = """
+            {
+                "createdBy": %d,
+                "title": "Review case documents",
+                "dueAt": "2026-11-05T12:00:00Z"
+            }
+            """.formatted(testCaseworker.getId());
+
+        mockMvc.perform(post("/tasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestBody))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errors.caseId").exists());
+    }
+
+    @DisplayName("Should return 404 when the case does not exist")
+    @Test
+    void shouldRejectUnknownCase() throws Exception {
+        String requestBody = """
+            {
+                "caseId": -1,
+                "createdBy": %d,
+                "title": "Review case documents",
+                "dueAt": "2026-11-05T12:00:00Z"
+            }
+            """.formatted(testCaseworker.getId());
+
+        mockMvc.perform(post("/tasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestBody))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.detail").value("Case not found: -1"));
     }
 
 }

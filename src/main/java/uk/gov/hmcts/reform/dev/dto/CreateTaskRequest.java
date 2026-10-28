@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Size;
 import java.time.Instant;
 
 public record CreateTaskRequest(
+    @NotNull Long caseId,
     @NotNull Long createdBy,
     @NotBlank @Size(max = 255) String title,
     String description,
