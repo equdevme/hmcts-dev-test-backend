@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import uk.gov.hmcts.reform.dev.models.Task;
 
-public interface TaskRepository
-    extends JpaRepository<Task, Long>, JpaSpecificationExecutor<Task> {
-        List<Task> findByAssociatedCaseIdOrderByDueAtAscIdAsc(Long caseId);
+public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificationExecutor<Task> {
+    List<Task> findByAssociatedCaseIdOrderByDueAtAscIdAsc(Long caseId);
 }

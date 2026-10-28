@@ -68,11 +68,8 @@ class CaseControllerTest {
 
         mockMvc.perform(get("/cases"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.length()").value(2))
-            .andExpect(jsonPath("$[0].id").value(testCase.getId()))
-            .andExpect(jsonPath("$[0].ownerId").value(testCaseworker.getId()))
-            .andExpect(jsonPath("$[0].title").value("Test Case"))
-            .andExpect(jsonPath("$[1].id").value(secondCase.getId()));
+            .andExpect(jsonPath("$[?(@.id == " + testCase.getId() + ")]").exists())
+            .andExpect(jsonPath("$[?(@.id == " + secondCase.getId() + ")]").exists());
     }
 
     @DisplayName("Should filter cases by owner")

@@ -67,11 +67,11 @@ class CaseRepositoryTest {
             new Caseworker("Second Caseworker")
         );
 
-        var firstCase = caseRepository.save(
+        final var firstCase = caseRepository.save(
             new Case(firstOwner, "First case", null)
         );
 
-        var secondCase = caseRepository.save(
+        final var secondCase = caseRepository.save(
             new Case(firstOwner, "Second case", null)
         );
 
