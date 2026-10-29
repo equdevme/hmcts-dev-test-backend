@@ -21,7 +21,6 @@ import uk.gov.hmcts.reform.dev.dto.CreateTaskRequest;
 import uk.gov.hmcts.reform.dev.dto.TaskResponse;
 import uk.gov.hmcts.reform.dev.dto.UpdateTaskStatusRequest;
 import uk.gov.hmcts.reform.dev.models.TaskSortField;
-import uk.gov.hmcts.reform.dev.models.TaskStatus;
 import uk.gov.hmcts.reform.dev.services.TaskService;
 
 @RestController
@@ -50,7 +49,7 @@ public class TaskController {
 
     @GetMapping
     public List<TaskResponse> getTasks(
-        @RequestParam(required = false) TaskStatus status,
+        @RequestParam(required = false) String status,
         @RequestParam(required = false) Long createdBy,
         @RequestParam(required = false) Instant dueBefore,
         @RequestParam(defaultValue = "dueAt") TaskSortField sortBy,

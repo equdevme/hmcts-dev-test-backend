@@ -1,3 +1,4 @@
+
 package uk.gov.hmcts.reform.dev.controllers;
 
 import java.time.Instant;
@@ -18,6 +19,7 @@ import uk.gov.hmcts.reform.dev.models.Task;
 import uk.gov.hmcts.reform.dev.repositories.CaseRepository;
 import uk.gov.hmcts.reform.dev.repositories.CaseworkerRepository;
 import uk.gov.hmcts.reform.dev.repositories.TaskRepository;
+import uk.gov.hmcts.reform.dev.repositories.TaskStatusRepository;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -40,6 +42,9 @@ class CaseControllerTest {
 
     @Autowired
     private TaskRepository taskRepository;
+
+    @Autowired
+    private TaskStatusRepository taskStatusRepository;
 
     private Caseworker testCaseworker;
     private Case testCase;
@@ -118,35 +123,41 @@ class CaseControllerTest {
             new Case(testCaseworker, "Other Case", null)
         );
 
-        var firstTask = taskRepository.saveAndFlush(
-            new Task(
-                testCase,
-                testCaseworker,
-                "Review documents",
-                null,
-                Instant.parse("2026-11-05T12:00:00Z")
-            )
-        );
+        var defaultStatus = taskStatusRepository.findByIsDefaultTrue()
+            .orElseThrow();
 
-        var secondTask = taskRepository.saveAndFlush(
-            new Task(
-                testCase,
-                testCaseworker,
-                "Prepare hearing",
-                null,
-                Instant.parse("2026-11-06T12:00:00Z")
-            )
+        var firstTaskToSave = new Task(
+            testCase,
+            testCaseworker,
+            "Review documents",
+            null,
+            Instant.parse("2026-11-05T12:00:00Z")
         );
+        firstTaskToSave.setStatus(defaultStatus);
 
-        taskRepository.saveAndFlush(
-            new Task(
-                otherCase,
-                testCaseworker,
-                "Unrelated task",
-                null,
-                Instant.parse("2026-11-04T12:00:00Z")
-            )
+        var firstTask = taskRepository.saveAndFlush(firstTaskToSave);
+
+        var secondTaskToSave = new Task(
+            testCase,
+            testCaseworker,
+            "Prepare hearing",
+            null,
+            Instant.parse("2026-11-06T12:00:00Z")
         );
+        secondTaskToSave.setStatus(defaultStatus);
+
+        var secondTask = taskRepository.saveAndFlush(secondTaskToSave);
+
+        var unrelatedTask = new Task(
+            otherCase,
+            testCaseworker,
+            "Unrelated task",
+            null,
+            Instant.parse("2026-11-04T12:00:00Z")
+        );
+        unrelatedTask.setStatus(defaultStatus);
+
+        taskRepository.saveAndFlush(unrelatedTask);
 
         mockMvc.perform(get("/cases/{id}/tasks", testCase.getId()))
             .andExpect(status().isOk())

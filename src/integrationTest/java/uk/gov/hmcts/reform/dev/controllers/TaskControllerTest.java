@@ -27,6 +27,7 @@ import uk.gov.hmcts.reform.dev.models.TaskStatus;
 import uk.gov.hmcts.reform.dev.repositories.CaseRepository;
 import uk.gov.hmcts.reform.dev.repositories.CaseworkerRepository;
 import uk.gov.hmcts.reform.dev.repositories.TaskRepository;
+import uk.gov.hmcts.reform.dev.repositories.TaskStatusRepository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -63,6 +64,9 @@ class TaskControllerTest {
     @Autowired
     private CaseRepository caseRepository;
 
+    @Autowired
+    private TaskStatusRepository taskStatusRepository;
+
     private Case testCase;
 
     private Caseworker testCaseworker;
@@ -82,15 +86,20 @@ class TaskControllerTest {
         String title,
         String dueAt
     ) {
-        return taskRepository.saveAndFlush(
-            new Task(
-                testCase,
-                caseworker,
-                title,
-                null,
-                Instant.parse(dueAt)
-            )
+        Task task = new Task(
+            testCase,
+            caseworker,
+            title,
+            null,
+            Instant.parse(dueAt)
         );
+
+        TaskStatus defaultStatus = taskStatusRepository.findByIsDefaultTrue()
+            .orElseThrow();
+
+        task.setStatus(defaultStatus);
+
+        return taskRepository.saveAndFlush(task);
     }
 
     @DisplayName("Should create a task and return 201")
@@ -545,17 +554,22 @@ class TaskControllerTest {
 
         final Instant originalUpdatedAt = task.getUpdatedAt();
 
+        TaskStatus newStatus = taskStatusRepository.findAll().stream()
+            .filter(status -> !status.isDefault())
+            .findFirst()
+            .orElseThrow();
+
         mockMvc.perform(patch("/tasks/{id}", task.getId())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
-                        "status": "IN_PROGRESS"
+                        "status": "%s"
                     }
-                    """))
+                    """.formatted(newStatus.getCode())))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(task.getId()))
             .andExpect(jsonPath("$.caseId").value(testCase.getId()))
-            .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+            .andExpect(jsonPath("$.status").value(newStatus.getCode()))
             .andExpect(jsonPath("$.title").value("Review documents"));
 
         entityManager.flush();
@@ -564,7 +578,7 @@ class TaskControllerTest {
         Task updatedTask = taskRepository.findById(task.getId()).orElseThrow();
 
         assertTrue(updatedTask.getUpdatedAt().isAfter(originalUpdatedAt));
-        assertEquals(TaskStatus.IN_PROGRESS, updatedTask.getStatus());
+        assertEquals(newStatus.getCode(), updatedTask.getStatus().getCode());
     }
 
     @DisplayName("Should reject a status update when status is missing")

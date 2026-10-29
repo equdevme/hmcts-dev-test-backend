@@ -112,4 +112,22 @@ public class GlobalExceptionHandler {
 
         return problem;
     }
+
+    @ExceptionHandler(InvalidRequestException.class)
+    public ProblemDetail handleInvalidRequest(
+        InvalidRequestException exception
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            "Request validation failed"
+        );
+
+        problem.setTitle("Invalid request body");
+        problem.setProperty(
+            "errors",
+            Map.of(exception.getField(), exception.getMessage())
+        );
+
+        return problem;
+    }
 }

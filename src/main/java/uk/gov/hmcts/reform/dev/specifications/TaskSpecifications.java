@@ -15,7 +15,7 @@ public final class TaskSpecifications {
 
     public static Specification<Task> hasStatus(TaskStatus status) {
         return (root, query, criteriaBuilder) ->
-            criteriaBuilder.equal(root.get("status"), status);
+            criteriaBuilder.equal(root.get("status").get("code"), status.getCode());
     }
 
     public static Specification<Task> createdBy(Long caseworkerId) {

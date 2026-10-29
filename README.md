@@ -1,3 +1,4 @@
+
 # Task Management API
 
 Backend application for the HMCTS developer coding challenge, built with Java, Spring Boot, PostgreSQL and Gradle.
@@ -65,7 +66,7 @@ The database schema is managed by versioned Flyway migrations in:
 
 `src/main/resources/db/migration/`
 
-The schema includes three related entities:
+The schema includes four related entities:
 
 **Caseworkers**
 
@@ -81,9 +82,31 @@ The schema includes three related entities:
 **Tasks**
 
 - A unique identifier, required title and optional description.
-- A status (`TODO`, `IN_PROGRESS`, `DONE`) and required due date/time.
+- A required status referencing the `task_statuses` table.
+- A required due date/time.
 - A required case reference (`case_id`) and a separate reference to the creating caseworker (`created_by`).
 - Creation and last-updated timestamps.
+
+**Task statuses**
+
+- A unique status code (`code`) used as a stable identifier.
+- A human-readable display label (`label`).
+- A display order (`display_order`) determining the order in which statuses are presented.
+- A default flag (`is_default`) identifying the status assigned to newly created tasks.
+
+The initial task statuses are:
+
+| Code | Label | Display order | Default |
+|---|---|---|---|
+| `TODO` | To do | 1 | Yes |
+| `IN_PROGRESS` | In progress | 2 | No |
+| `DONE` | Done | 3 | No |
+
+Task records reference status codes through a foreign key to `task_statuses`. This ensures that tasks can only reference statuses defined in the database.
+
+Status codes are stable identifiers used by the API, while labels, ordering and the default status are database-configured. This allows the available statuses and their presentation to be updated through database migrations without changing the Java status model.
+
+A PostgreSQL partial unique index ensures that no more than one status can be marked as the default. Integration tests additionally verify that exactly one default status is configured.
 
 Each task belongs to one case. A case's owner need not be the creator of its tasks: all caseworkers can view and work with tasks across cases. Foreign keys restrict deletion of referenced cases and caseworkers.
 
@@ -136,6 +159,45 @@ Returns tasks associated with the specified case, ordered by due date ascending 
 - `200 OK` — JSON array of tasks, or `[]` if the case has no tasks.
 - `404 Not Found` — Case does not exist.
 
+## Task Status API
+
+### Retrieve available task statuses
+
+**`GET /task-statuses`**
+
+Returns the task statuses configured in the database, ordered by `displayOrder` ascending.
+
+**Successful response — `200 OK`**
+
+```json
+[
+  {
+    "code": "TODO",
+    "label": "To do",
+    "displayOrder": 1,
+    "isDefault": true
+  },
+  {
+    "code": "IN_PROGRESS",
+    "label": "In progress",
+    "displayOrder": 2,
+    "isDefault": false
+  },
+  {
+    "code": "DONE",
+    "label": "Done",
+    "displayOrder": 3,
+    "isDefault": false
+  }
+]
+```
+
+These values reflect the initial database configuration.
+
+The endpoint allows API clients to retrieve available status codes, display labels, ordering and default-status information without maintaining a separate hardcoded list.
+
+Status configuration is managed through database migrations; the API does not currently provide endpoints for creating, editing or deleting status definitions.
+
 ## Task API
 
 ### Create a task
@@ -166,7 +228,7 @@ Example request:
 | `description` | No | Optional task description |
 | `dueAt` | Yes | ISO 8601 date/time representing an absolute instant |
 
-New tasks are assigned the `TODO` status automatically.
+New tasks are automatically assigned the status configured as the default in the `task_statuses` table (initially `TODO`).
 
 **Successful response — `201 Created`**
 
@@ -230,7 +292,7 @@ All tasks are visible to all caseworkers. The `createdBy` parameter can be used 
 
 | Parameter | Required | Description |
 |---|---|---|
-| `status` | No | Filter by task status: `TODO`, `IN_PROGRESS` or `DONE` |
+| `status` | No | Filter by a configured task status code. Available codes can be retrieved using `GET /task-statuses` |
 | `createdBy` | No | Filter by the ID of the creating caseworker |
 | `dueBefore` | No | Return tasks due strictly before the specified ISO 8601 instant |
 | `sortBy` | No | Sort by `dueAt`, `createdAt`, `updatedAt`, `title` or `status`. Defaults to `dueAt` |
@@ -283,11 +345,11 @@ For example, `GET /tasks?sortDirection=sideways` returns:
 }
 ```
 
-Invalid enum values and incompatible date/time values are also rejected with `400 Bad Request`.
+Unknown task status codes and incompatible date/time values are also rejected with `400 Bad Request`.
 
 ### Retrieve a task by ID
 
-`GET /tasks/{id}`
+**`GET /tasks/{id}`**
 
 Retrieves a single task by its ID.
 
@@ -298,6 +360,7 @@ GET /tasks/1
 ```
 
 **Responses:**
+
 - `200 OK` — Returns the task using the same response structure as task creation.
 - `404 Not Found` — The task does not exist, returned as a `ProblemDetail` response.
 - `400 Bad Request` — The task ID is not a valid number.
@@ -320,7 +383,9 @@ Updates the status of an existing task. Only the `status` field can currently be
 
 | Field | Required | Description |
 |---|---|---|
-| `status` | Yes | New task status: `TODO`, `IN_PROGRESS` or `DONE` |
+| `status` | Yes | New task status code. Must reference an existing status in `task_statuses` |
+
+Available status codes can be retrieved using `GET /task-statuses`.
 
 **Successful response — `200 OK`**
 
@@ -330,7 +395,7 @@ Returns the updated task using the same response structure as `POST /tasks`, inc
 
 | Status | Description |
 |---|---|
-| `400 Bad Request` | Missing, null or invalid status, malformed JSON or unsupported request fields |
+| `400 Bad Request` | Missing, null or unknown status, malformed JSON or unsupported request fields |
 | `404 Not Found` | The specified task does not exist |
 
 Errors use the existing `ProblemDetail` response format.
@@ -380,19 +445,39 @@ The IDs are illustrative and are generated by the database.
 
 Tests use the `test` Spring profile and a separate `tasks_test` database.
 
-Ensure PostgreSQL is running, then run the test suite:
+Ensure PostgreSQL is running before executing integration tests.
+
+Run the standard unit-test suite:
 
 ```bash
 ./gradlew test
 ```
 
-To force tests to execute even when Gradle reports them as up to date:
+Run the integration-test suite:
 
 ```bash
-./gradlew test --rerun-tasks
+./gradlew integration
 ```
 
-The repository also has an integration-test configuration under `src/integrationTest/resources/application-test.yaml`; if using a separately configured `integration` task, verify its availability in the Gradle build.
+Run integration tests for a particular class:
+
+```bash
+./gradlew integration --tests '*TaskStatusControllerTest'
+```
+
+To force the integration tests to execute even when Gradle reports them as up to date:
+
+```bash
+./gradlew integration --rerun-tasks
+```
+
+Integration test reports are generated under:
+
+`build/reports/tests/integration/`
+
+The integration test configuration is located at:
+
+`src/integrationTest/resources/application-test.yaml`
 
 ### Repository integration tests
 
@@ -403,6 +488,12 @@ These verify that:
 - Cases can be filtered by owner ID, including owners with no cases.
 - Tasks can be persisted and reloaded successfully.
 - Persisted task fields, relationships, default status and timestamps are populated as expected.
+
+Task status repository tests additionally verify that:
+
+- Exactly one default task status is configured.
+- The configured default status can be retrieved through the repository.
+- Statuses are returned in ascending display order.
 
 ### Controller integration tests
 
@@ -457,9 +548,15 @@ Case controller tests cover:
 
 The caseworker retrieval test verifies that `GET /caseworkers` returns the three seeded demonstration caseworkers.
 
+The task status controller test verifies that `GET /task-statuses`:
+
+- Returns `200 OK` with a JSON array.
+- Returns all configured statuses in display order.
+- Includes the correct code, label, display order and default flag for each status.
+
 Controller tests create their own caseworker and case test data rather than relying on hardcoded database IDs.
 
-Tests use transactions that roll back after execution to avoid retaining test data.
+Tests that modify application data use transactions that roll back after execution to avoid retaining test data.
 
 ## Configuration
 
@@ -478,7 +575,12 @@ This directs integration tests to the separate test database.
 
 - Flyway owns database schema creation and migration.
 - Hibernate is configured with `ddl-auto: validate` rather than automatically creating or modifying tables.
-- Task status is represented by a Java enum and constrained at database level.
+- Task statuses are modelled as JPA entities backed by the `task_statuses` reference table, rather than a Java enum.
+- Task status codes are enforced through a database foreign key, while labels, display order and the default status are database-configured.
+- A PostgreSQL partial unique index prevents multiple statuses from being marked as the default, and integration tests verify that exactly one default exists.
+- Task creation resolves the configured default status through `TaskStatusRepository`, rather than hardcoding a default in the `Task` entity.
+- Task status filtering and updates validate codes against the status repository.
+- `GET /task-statuses` exposes the configured status values to API clients.
 - Task creation and update timestamps are managed using JPA lifecycle callbacks.
 - Database-generated identity values are used for primary keys.
 - API request and response representations use Java records, keeping the persistence entities separate from the API contract.
@@ -497,10 +599,18 @@ This directs integration tests to the separate test database.
 
 ## Further Development
 
-The following functionality and improvements are outside the current backend implementation scope or remain to be completed:
+The following functionality and improvements are planned or could be considered as future enhancements:
 
-- Frontend case list and details pages, caseworker selection, and task creation, viewing, status updates and deletion.
+- Frontend status filtering, due-date sorting and integration with the database-configured task statuses endpoint.
+- - **Drag-and-drop task management:** Introduce a Kanban-style board allowing caseworkers to move tasks between status columns using drag-and-drop. Changes would be persisted through the existing task status update API, with an accessible alternative for keyboard and assistive technology users.
+- **Task proposal and approval workflow:** Allow caseworkers to propose tasks for cases owned by colleagues, with the case owner responsible for accepting or rejecting proposals. Approval status would be modelled separately from task progress, preserving the distinction between task approval and task completion.
 - Additional task management business rules, such as status transition restrictions.
 - General-purpose task editing beyond status updates.
-- Pagination for task listing if required for larger datasets.
+- Pagination for task and case listings if required for larger datasets.
+- Enforce future due-date validation in the backend, alongside any additional task management business rules.
 - Further documentation of assumptions, limitations and potential improvements.
+
+## Design Documentation
+
+See [Design Document](docs/design.md) for architectural decisions,
+implementation trade-offs and potential future enhancements.

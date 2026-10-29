@@ -13,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 import uk.gov.hmcts.reform.dev.models.Case;
 import uk.gov.hmcts.reform.dev.models.Caseworker;
 import uk.gov.hmcts.reform.dev.models.Task;
-import uk.gov.hmcts.reform.dev.models.TaskStatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,6 +23,9 @@ class TaskRepositoryTest {
 
     @Autowired
     private TaskRepository taskRepository;
+
+    @Autowired
+    private TaskStatusRepository taskStatusRepository;
 
     @Autowired
     private CaseworkerRepository caseworkerRepository;
@@ -57,6 +59,11 @@ class TaskRepositoryTest {
             dueAt
         );
 
+        var defaultStatus = taskStatusRepository.findByIsDefaultTrue()
+            .orElseThrow();
+
+        task.setStatus(defaultStatus);
+
         // Save to PostgreSQL
         var savedTask = taskRepository.save(task);
 
@@ -78,8 +85,8 @@ class TaskRepositoryTest {
         assertThat(retrievedTask.getCreatedBy().getId())
             .isEqualTo(caseworker.getId());
 
-        assertThat(retrievedTask.getStatus())
-            .isEqualTo(TaskStatus.TODO);
+        assertThat(retrievedTask.getStatus().getCode())
+            .isEqualTo(defaultStatus.getCode());
 
         assertThat(retrievedTask.getDueAt())
             .isEqualTo(dueAt);
