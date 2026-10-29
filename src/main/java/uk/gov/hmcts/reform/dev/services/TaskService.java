@@ -2,7 +2,6 @@ package uk.gov.hmcts.reform.dev.services;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;

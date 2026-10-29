@@ -135,7 +135,7 @@ class CaseControllerTest {
         );
         firstTaskToSave.setStatus(defaultStatus);
 
-        var firstTask = taskRepository.saveAndFlush(firstTaskToSave);
+        final var firstTask = taskRepository.saveAndFlush(firstTaskToSave);
 
         var secondTaskToSave = new Task(
             testCase,
